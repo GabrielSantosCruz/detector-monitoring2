@@ -3,6 +3,7 @@
 #include "pcf8563.h"      // Biblioteca Lewis He (SensorLib)
 #include "esp_sleep.h"    
 #include "driver/gpio.h"  // Para gpio_wakeup_enable()
+#include "esp_task_wdt.h"
 
 PCF8563_Class rtc;
 
@@ -11,6 +12,8 @@ PCF8563_Class rtc;
 #define RTC_SCL_PIN 9
 #define GEIGER_PIN  0
 
+#define ARRAY_SIZE 24
+
 volatile bool alarmeDisparado = false;
 int pulsosDesdeUltimoWakeup;
 const char* ssid     = "ssid";
@@ -18,15 +21,30 @@ const char* password = "password";
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = -3 * 3600;  // Fuso horário (Brasil: -3h)
 const int   daylightOffset_sec = 0;     // Horário de verão (0 atualmente)
+volatile unsigned long contadorHoras[ARRAY_SIZE] = { 0 };
 
 void IRAM_ATTR handleRtcInterrupt();
 void clearRtcAlarmFlag();
 void IRAM_ATTR contarPulsoISR();
 void syncRTCWithNTP();
+void print_array();
+void wifiConnect();
+
+esp_task_wdt_config_t wdt_config = {
+    .timeout_ms = 10000,       // 10 segundos
+    .idle_core_mask = (1 << 0),// Monitora core 0
+    .trigger_panic = true      // Reinicia em caso de travamento
+};
 
 void setup() {
   Serial.begin(115200);
   while(!Serial);
+
+  Serial.println("ESP acabou de ligar!");
+
+  // Inicializa o watchdog com a configuração
+  esp_task_wdt_init(&wdt_config);
+  esp_task_wdt_add(NULL);  // Adiciona a task principal (loop)
 
   Wire.begin(RTC_SDA_PIN, RTC_SCL_PIN);  
 
@@ -38,20 +56,17 @@ void setup() {
     }
   }
 
-  WiFi.begin(ssid, password);
-  Serial.print("Conectando ao Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nConectado!");
+  wifiConnect(); // ver posteriormente como desconectar/desligar o wifi para economizar energia
 
+  // Verificar isso aqui posteriormente para que a a configuração seja feita apenas uma vez
   // Sincroniza com NTP
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   syncRTCWithNTP();
+  esp_task_wdt_reset();
 
   // apenas desativa o alarme sem limpar as flags do anterior
   rtc.disableAlarm();
+  clearRtcAlarmFlag();
 
   RTC_Date now = rtc.getDateTime();
   uint8_t alarmMinute = (now.minute + 1) % 60;
@@ -122,8 +137,30 @@ void syncRTCWithNTP() {
   Serial.println("RTC sincronizado com NTP!");
 }
 
+void print_array(){
+  Serial.print("[");
+  for(int i = 0; i < ARRAY_SIZE; i++){
+    Serial.print(contadorHoras[i]);
+    if(i < ARRAY_SIZE-1){
+      Serial.print(", ");
+    }
+  }
+  Serial.println("]");
+}
+
+void wifiConnect(){
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando ao Wi-Fi ");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConectado!");
+}
+
 void loop() {
   RTC_Date now = rtc.getDateTime();
+  esp_task_wdt_reset();
 
   Serial.printf("[%02d:%02d:%02d]\n", now.hour, now.minute, now.second);
 
