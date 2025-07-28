@@ -1,6 +1,6 @@
 #include <Wire.h>
 #include "pcf8563.h"      // Biblioteca Lewis He
-#include "esp_sleep.h"    // Deep sleep
+#include "esp_sleep.h"    
 #include "driver/gpio.h"  // Para gpio_wakeup_enable()
 
 PCF8563_Class rtc;
@@ -19,11 +19,17 @@ void IRAM_ATTR contarPulsoISR();
 
 void setup() {
   Serial.begin(115200);
-  delay(2000);  
+  while(!Serial);
 
   Wire.begin(RTC_SDA_PIN, RTC_SCL_PIN);  
 
-  rtc.begin(Wire);
+  if(!rtc.begin(Wire)){
+    Serial.println("\nErro ao iniciar o RTC!");
+    while(1){
+      Serial.print(".");
+      delay(1000);
+    }
+  }
 
   rtc.setDateTime(2025, 7, 25, 10, 0, 0);
 
@@ -46,7 +52,7 @@ void setup() {
   pinMode(GEIGER_PIN, INPUT);  // Configura o pino como entrada
 
   // Configura interrupção na borda de descida
-  attachInterrupt(digitalPinToInterrupt(GEIGER_PIN), contarPulso, FALLING);
+  attachInterrupt(digitalPinToInterrupt(GEIGER_PIN), contarPulsoISR, FALLING);
 }
 
 void IRAM_ATTR handleRtcInterrupt() {
