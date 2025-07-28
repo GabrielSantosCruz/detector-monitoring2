@@ -1,5 +1,6 @@
 #include <Wire.h>
-#include "pcf8563.h"      // Biblioteca Lewis He
+#include <WiFi.h>
+#include "pcf8563.h"      // Biblioteca Lewis He (SensorLib)
 #include "esp_sleep.h"    
 #include "driver/gpio.h"  // Para gpio_wakeup_enable()
 
@@ -12,10 +13,16 @@ PCF8563_Class rtc;
 
 volatile bool alarmeDisparado = false;
 int pulsosDesdeUltimoWakeup;
+const char* ssid     = "ssid";
+const char* password = "password";
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = -3 * 3600;  // Fuso horário (Brasil: -3h)
+const int   daylightOffset_sec = 0;     // Horário de verão (0 atualmente)
 
 void IRAM_ATTR handleRtcInterrupt();
 void clearRtcAlarmFlag();
 void IRAM_ATTR contarPulsoISR();
+void syncRTCWithNTP();
 
 void setup() {
   Serial.begin(115200);
@@ -31,9 +38,19 @@ void setup() {
     }
   }
 
-  rtc.setDateTime(2025, 7, 25, 10, 0, 0);
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando ao Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConectado!");
 
-  // Limpa alarmes anteriores e flags
+  // Sincroniza com NTP
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  syncRTCWithNTP();
+
+  // apenas desativa o alarme sem limpar as flags do anterior
   rtc.disableAlarm();
 
   RTC_Date now = rtc.getDateTime();
@@ -82,6 +99,27 @@ void clearRtcAlarmFlag() {
 
 void IRAM_ATTR contarPulsoISR() {
   pulsosDesdeUltimoWakeup++;
+}
+
+void syncRTCWithNTP() {
+  // Obtém a hora atual do sistema (sincronizada via NTP)
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Falha ao obter tempo NTP");
+    return;
+  }
+
+  // Configura o RTC com a hora obtida
+  rtc.setDateTime(
+    1900 + timeinfo.tm_year, // tm_year é "anos desde 1900"
+    timeinfo.tm_mon + 1,     // tm_mon começa em 0
+    timeinfo.tm_mday,
+    timeinfo.tm_hour,
+    timeinfo.tm_min,
+    timeinfo.tm_sec
+  );
+
+  Serial.println("RTC sincronizado com NTP!");
 }
 
 void loop() {
