@@ -12,18 +12,18 @@ PCF8563_Class rtc;
 #define RTC_INT_PIN 2  // GPIO conectada ao INT do PCF8563 (precisa mudar para um abaixo de 4)
 #define RTC_SDA_PIN 8
 #define RTC_SCL_PIN 9
-#define GEIGER_PIN  0
-#define SD_CS       3  // Chip Select do SD
-#define SD_MISO     5
-#define SD_MOSI     6
-#define SD_SCK      4
+#define GEIGER_PIN 0
+#define SD_CS 3  // Chip Select do SD
+#define SD_MISO 5
+#define SD_MOSI 6
+#define SD_SCK 4
 
-#define ARRAY_SIZE  24
+#define ARRAY_SIZE 24
 
 volatile bool alarmeDisparado = false;
 int pulsosDesdeUltimoWakeup = 0;
-const char* ssid = "Mojo Dojo Casa House";
-const char* password = "depoiseuteconto";
+const char* ssid = "";
+const char* password = "";
 const char* ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = -3 * 3600;  // Fuso horário (Brasil: -3h)
 const int daylightOffset_sec = 0;      // Horário de verão (0 atualmente)
@@ -36,16 +36,20 @@ void IRAM_ATTR contarPulsoISR();
 void syncRTCWithNTP();
 void print_array();
 void wifiConnect();
+String getFileName();
+void writeHeader(File dataFile);
+void writeDataToSD();
 
 esp_task_wdt_config_t wdt_config = {
-  .timeout_ms = 20000,         
+  .timeout_ms = 20000,
   .idle_core_mask = (1 << 0),  // Monitora core 0
   .trigger_panic = true        // Reinicia em caso de travamento
 };
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial);
+  while (!Serial)
+    ;
 
   Serial.println("ESP acabou de ligar!");
 
@@ -71,7 +75,7 @@ void setup() {
   }
   Serial.println("Cartão SD pronto.");
 
-  esp_task_wdt_add(NULL);       // Registra a tarefa principal (loop)
+  esp_task_wdt_add(NULL);  // Registra a tarefa principal (loop)
 
 
   // Verifica se o RTC já tem um horário válido (evita sincronização desnecessária)
@@ -96,7 +100,7 @@ void setup() {
   pinMode(RTC_INT_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(RTC_INT_PIN), handleRtcInterrupt, FALLING);
 
-  Serial.printf("Alarme programado para %02d:%02d\n", now.hour, alarmMinute);
+  Serial.printf("Alarme programado para %02d:%02d:%02d\n", now.hour, alarmMinute, now.second);
   Serial.println("Aguardando alarme...");
 
   pinMode(GEIGER_PIN, INPUT);
@@ -185,25 +189,95 @@ void wifiConnect() {
   Serial.println("\nConectado!");
 }
 
+String getFileName() {
+  RTC_Date now = rtc.getDateTime();
+  char filename[20];
+  snprintf(filename, sizeof(filename), "/dados_%04d%02d%02d.csv",
+           now.year, now.month, now.day);
+  return String(filename);
+}
+
+void writeHeader(File dataFile) {
+  dataFile.print("hora > [contagem ultima hora] =>");
+  dataFile.printf("{", i);
+  for (int i = 0; i < ARRAY_SIZE; i++) {
+    if ( i = 0 ){
+      dataFile.printf("H%d", i);
+    } else {
+      dataFile.printf(",H%d", i);
+    }
+  }
+  dataFile.printf("}", i);
+  dataFile.println();
+}
+
+void writeDataToSD() {
+  // Abre o arquivo (cria se não existir)
+  String filename = getFileName();
+  File dataFile = SD.open(filename, FILE_APPEND);
+
+  if (!dataFile) {
+    Serial.println("Erro ao abrir arquivo!");
+    return;
+  }
+
+  // Se o arquivo estiver vazio, escreve o cabeçalho
+  if (dataFile.size() == 0) {
+    writeHeader(dataFile);
+  }
+
+  // Obtém a hora atual
+  RTC_Date now = rtc.getDateTime();
+
+  // Escreve os dados
+  dataFile.printf("%02d:%02d:%02d > [%d] => ",
+                  now.hour, now.minute, now.second,
+                  pulsosDesdeUltimoWakeup);
+
+  // Escreve o array completo
+  dataFile.printf("{");
+  for (int i = 0; i < ARRAY_SIZE; i++) {
+    if (i = 0){
+      dataFile.printf("%d", contadorHoras[i]);
+    } else {
+      dataFile.printf(",%d", contadorHoras[i]);
+    }
+  }
+  dataFile.printf("}");
+  dataFile.println();
+
+  dataFile.close();
+  Serial.println("Dados gravados no SD!");
+}
 void loop() {
   RTC_Date now = rtc.getDateTime();
   esp_task_wdt_reset();
-
-  Serial.printf("[%02d:%02d:%02d]\n", now.hour, now.minute, now.second);
 
   if (alarmeDisparado) {
     Serial.println(">> Alarme do RTC disparado! <<");
     alarmeDisparado = false;
 
-    clearRtcAlarmFlag();
+    // Atualiza o array de contagem
+    contadorHoras[now.hour] += pulsosDesdeUltimoWakeup;
+
+    // Grava os dados no SD
+    writeDataToSD();
+
     Serial.print("Pulsos do detector: ");
     Serial.println(pulsosDesdeUltimoWakeup);
     pulsosDesdeUltimoWakeup = 0;
 
-    RTC_Date now = rtc.getDateTime();
+    // Prepara próximo alarme
     uint8_t alarmMinute = (now.minute + 1) % 60;
     rtc.setAlarmByMinutes(alarmMinute);
     rtc.enableAlarm();
+    clearRtcAlarmFlag();
+
+    Serial.printf("Alarme programado para %02d:%02d:%02d\n", now.hour, alarmMinute, now.second);
+    Serial.println("Aguardando alarme...");
+
+    // Mostra o array atualizado
+    print_array();
   }
 
   delay(1000);
