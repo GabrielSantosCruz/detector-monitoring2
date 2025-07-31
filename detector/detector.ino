@@ -38,15 +38,14 @@ void print_array();
 void wifiConnect();
 
 esp_task_wdt_config_t wdt_config = {
-  .timeout_ms = 20000,         // Aumentei para 20 segundos
+  .timeout_ms = 20000,         
   .idle_core_mask = (1 << 0),  // Monitora core 0
   .trigger_panic = true        // Reinicia em caso de travamento
 };
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial)
-    ;
+  while (!Serial);
 
   Serial.println("ESP acabou de ligar!");
 
@@ -60,6 +59,17 @@ void setup() {
     }
   }
   Serial.println("RTC pronto.");
+
+  SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  if (!SD.begin(SD_CS, SPI, 1000000)) {  // 4 MHz
+    Serial.println("Falha ao inicializar SD!");
+    esp_task_wdt_delete(NULL);  // evita reboot enquanto depura
+    while (1) {
+      Serial.print(".");
+      delay(1000);
+    }
+  }
+  Serial.println("Cartão SD pronto.");
 
   esp_task_wdt_add(NULL);       // Registra a tarefa principal (loop)
 
