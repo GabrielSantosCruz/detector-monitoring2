@@ -22,8 +22,8 @@ PCF8563_Class rtc;
 
 volatile bool alarmeDisparado = false;
 int pulsosDesdeUltimoWakeup = 0;
-const char* ssid = "";
-const char* password = "";
+const char* ssid = "Mojo Dojo Casa House";
+const char* password = "depoiseuteconto";
 const char* ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = -3 * 3600;  // Fuso horário (Brasil: -3h)
 const int daylightOffset_sec = 0;      // Horário de verão (0 atualmente)
@@ -65,7 +65,7 @@ void setup() {
   Serial.println("RTC pronto.");
 
   SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  if (!SD.begin(SD_CS, SPI, 1000000)) {  // 4 MHz
+  if (!SD.begin(SD_CS, SPI, 4000000)) {  // 4 MHz
     Serial.println("Falha ao inicializar SD!");
     esp_task_wdt_delete(NULL);  // evita reboot enquanto depura
     while (1) {
@@ -199,15 +199,15 @@ String getFileName() {
 
 void writeHeader(File dataFile) {
   dataFile.print("hora > [contagem ultima hora] =>");
-  dataFile.printf("{", i);
+  dataFile.printf("{");
   for (int i = 0; i < ARRAY_SIZE; i++) {
-    if ( i = 0 ){
+    if ( i == 0 ){
       dataFile.printf("H%d", i);
     } else {
       dataFile.printf(",H%d", i);
     }
   }
-  dataFile.printf("}", i);
+  dataFile.printf("}");
   dataFile.println();
 }
 
@@ -237,7 +237,7 @@ void writeDataToSD() {
   // Escreve o array completo
   dataFile.printf("{");
   for (int i = 0; i < ARRAY_SIZE; i++) {
-    if (i = 0){
+    if (i == 0){
       dataFile.printf("%d", contadorHoras[i]);
     } else {
       dataFile.printf(",%d", contadorHoras[i]);
@@ -261,6 +261,8 @@ void loop() {
     contadorHoras[now.hour] += pulsosDesdeUltimoWakeup;
 
     // Grava os dados no SD
+    Serial.println("Antes de gravar no cartao");
+
     writeDataToSD();
 
     Serial.print("Pulsos do detector: ");
