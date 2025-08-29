@@ -9,11 +9,11 @@
 
 PCF8563_Class rtc;
 
-#define RTC_INT_PIN 2  // GPIO conectada ao INT do PCF8563 (precisa mudar para um abaixo de 4)
+#define RTC_INT_PIN 3  // GPIO conectada ao INT do PCF8563
 #define RTC_SDA_PIN 8
 #define RTC_SCL_PIN 9
 #define GEIGER_PIN 0
-#define SD_CS 3  // Chip Select do SD
+#define SD_CS 2  // Chip Select do SD
 #define SD_MISO 5
 #define SD_MOSI 6
 #define SD_SCK 4
@@ -199,15 +199,15 @@ String getFileName() {
 
 void writeHeader(File dataFile) {
   dataFile.print("hora > [contagem ultima hora] =>");
-  dataFile.printf("{", i);
+  dataFile.printf("{");
   for (int i = 0; i < ARRAY_SIZE; i++) {
-    if ( i = 0 ){
+    if ( i == 0 ){
       dataFile.printf("H%d", i);
     } else {
       dataFile.printf(",H%d", i);
     }
   }
-  dataFile.printf("}", i);
+  dataFile.printf("}");
   dataFile.println();
 }
 
@@ -237,7 +237,7 @@ void writeDataToSD() {
   // Escreve o array completo
   dataFile.printf("{");
   for (int i = 0; i < ARRAY_SIZE; i++) {
-    if (i = 0){
+    if (i == 0){
       dataFile.printf("%d", contadorHoras[i]);
     } else {
       dataFile.printf(",%d", contadorHoras[i]);
