@@ -17,6 +17,7 @@ PCF8563_Class rtc;
 #define SD_MISO 5
 #define SD_MOSI 6
 #define SD_SCK 4
+#define LED_HEARTBEAT 10  // GPIO para o LED de heartbeat
 
 #define ARRAY_SIZE 24
 
@@ -30,6 +31,11 @@ const int daylightOffset_sec = 0;      // Horário de verão (0 atualmente)
 volatile unsigned long contadorHoras[ARRAY_SIZE] = { 0 };
 bool rtcSincronizado = false;
 
+// Variáveis para heartbeat LED
+unsigned long ultimoPiscaLed = 0;
+const int intervaloPisca = 1000;  // 1 segundo entre piscadas
+bool estadoLed = false;
+
 void IRAM_ATTR handleRtcInterrupt();
 void clearRtcAlarmFlag();
 void IRAM_ATTR contarPulsoISR();
@@ -39,6 +45,7 @@ void wifiConnect();
 String getFileName();
 void writeHeader(File dataFile);
 void writeDataToSD();
+void atualizarHeartbeat();  // Nova função para heartbeat
 
 esp_task_wdt_config_t wdt_config = {
   .timeout_ms = 20000,
@@ -77,7 +84,6 @@ void setup() {
 
   esp_task_wdt_add(NULL);  // Registra a tarefa principal (loop)
 
-
   // Verifica se o RTC já tem um horário válido (evita sincronização desnecessária)
   RTC_Date now = rtc.getDateTime();
   if (now.year < 2024) {    // Se o RTC não estiver configurado (ano inválido)
@@ -86,25 +92,35 @@ void setup() {
     WiFi.disconnect(true);  // Desconecta o Wi-Fi e desliga o rádio
     WiFi.mode(WIFI_OFF);    // Desativa completamente o Wi-Fi
     rtcSincronizado = true;
+    
+    // Atualiza a variável now com o novo horário sincronizado
+    now = rtc.getDateTime();
   }
 
   // Desativa alarme antigo e configura novo
   rtc.disableAlarm();
   clearRtcAlarmFlag();
 
-  uint8_t alarmMinute = (now.minute + 1) % 60;
-  rtc.setAlarmByMinutes(alarmMinute);
+  // CONFIGURAÇÃO DO ALARME PARA 1 HORA
+  uint8_t alarmHour = (now.hour + 1) % 24;
+  rtc.setAlarmByHours(alarmHour);  // Alarme a cada hora
   rtc.enableAlarm();
   esp_task_wdt_reset();
 
   pinMode(RTC_INT_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(RTC_INT_PIN), handleRtcInterrupt, FALLING);
 
-  Serial.printf("Alarme programado para %02d:%02d:%02d\n", now.hour, alarmMinute, now.second);
+  Serial.printf("Alarme programado para %02d:%02d:00 (próxima hora)\n", alarmHour, now.minute);
   Serial.println("Aguardando alarme...");
 
   pinMode(GEIGER_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(GEIGER_PIN), contarPulsoISR, FALLING);
+  
+  // Configuração do LED heartbeat
+  pinMode(LED_HEARTBEAT, OUTPUT);
+  digitalWrite(LED_HEARTBEAT, LOW);
+  Serial.println("LED heartbeat configurado");
+  
   esp_task_wdt_reset();
 }
 
@@ -249,7 +265,21 @@ void writeDataToSD() {
   dataFile.close();
   Serial.println("Dados gravados no SD!");
 }
+
+void atualizarHeartbeat() {
+  unsigned long tempoAtual = millis();
+  
+  if (tempoAtual - ultimoPiscaLed >= intervaloPisca) {
+    ultimoPiscaLed = tempoAtual;
+    estadoLed = !estadoLed;
+    digitalWrite(LED_HEARTBEAT, estadoLed);
+  }
+}
+
 void loop() {
+  // Atualiza o LED heartbeat
+  atualizarHeartbeat();
+  
   RTC_Date now = rtc.getDateTime();
   esp_task_wdt_reset();
 
@@ -263,17 +293,17 @@ void loop() {
     // Grava os dados no SD
     writeDataToSD();
 
-    Serial.print("Pulsos do detector: ");
+    Serial.print("Pulsos na última hora: ");
     Serial.println(pulsosDesdeUltimoWakeup);
     pulsosDesdeUltimoWakeup = 0;
 
-    // Prepara próximo alarme
-    uint8_t alarmMinute = (now.minute + 1) % 60;
-    rtc.setAlarmByMinutes(alarmMinute);
+    // Prepara próximo alarme para a próxima hora
+    uint8_t alarmHour = (now.hour + 1) % 24;
+    rtc.setAlarmByHours(alarmHour);
     rtc.enableAlarm();
     clearRtcAlarmFlag();
 
-    Serial.printf("Alarme programado para %02d:%02d:%02d\n", now.hour, alarmMinute, now.second);
+    Serial.printf("Próximo alarme programado para %02d:%02d:00\n", alarmHour, now.minute);
     Serial.println("Aguardando alarme...");
 
     // Mostra o array atualizado
