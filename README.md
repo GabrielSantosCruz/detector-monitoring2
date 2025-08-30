@@ -1,6 +1,6 @@
 # 📟 Monitor de Radiação com ESP32-C3 + PCF8563 + SD Card
 
-Este projeto implementa um **monitor de radiação** utilizando um **detector Geiger**, um **RTC PCF8563** e um **ESP32-C3**.  
+Este projeto implementa um **monitor de radiação** para o **Detector Geiger RadiationD-v1.1(CAJOE)**, um **RTC PCF8563** e um **ESP32-C3**.  
 Os dados coletados são armazenados em um **cartão SD** no formato CSV, organizados por dia e hora.
 <p align="center">
   <img src="img/sistema-funcionando.jpg" alt="Monitor de radiação funcionando" width="300"/>
@@ -59,8 +59,7 @@ Exemplo:
   <img src="img/pcf8563.webp" alt="RTC PCF8563" width="300"/>
 
 - Detector Geiger  
-  <img src="img/geiger.jpg" alt="Detector Geiger" width="300" style="display:block; margin:0; padding:0; "/>
-
+  <img src="img/geiger.jpg" alt="Detector Geiger RadiationD-v1.1(CAJOE)" width="300" style="display:block; margin:0; padding:0; "/>
 
 
 - Módulo SD Card (SPI)  
