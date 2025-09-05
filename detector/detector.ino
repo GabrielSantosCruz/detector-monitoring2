@@ -9,17 +9,17 @@
 
 PCF8563_Class rtc;
 
-#define RTC_INT_PIN     3  // GPIO conectada ao INT do PCF8563
-#define RTC_SDA_PIN     8
-#define RTC_SCL_PIN     9
-#define GEIGER_PIN      0
-#define SD_CS           2  // Chip Select do SD
-#define SD_MISO         5
-#define SD_MOSI         6
-#define SD_SCK          4
-#define LED_HEARTBEAT   10  
+#define RTC_INT_PIN 3  // GPIO conectada ao INT do PCF8563
+#define RTC_SDA_PIN 8
+#define RTC_SCL_PIN 9
+#define GEIGER_PIN 0
+#define SD_CS 2  // Chip Select do SD
+#define SD_MISO 5
+#define SD_MOSI 6
+#define SD_SCK 4
+#define LED_HEARTBEAT 10
 
-#define ARRAY_SIZE      24
+#define ARRAY_SIZE 24
 
 volatile bool alarmeDisparado = false;
 int pulsosDesdeUltimoWakeup = 0;
@@ -32,7 +32,7 @@ volatile unsigned long contadorHoras[ARRAY_SIZE] = { 0 };
 bool rtcSincronizado = false;
 
 unsigned long ultimoPiscaLed = 0;
-const int intervaloPisca = 1000; 
+const int intervaloPisca = 1000;
 bool estadoLed = false;
 
 void IRAM_ATTR handleRtcInterrupt();
@@ -44,7 +44,7 @@ void wifiConnect();
 String getFileName();
 void writeHeader(File dataFile);
 void writeDataToSD();
-void atualizarHeartbeat();  
+void atualizarHeartbeat();
 
 esp_task_wdt_config_t wdt_config = {
   .timeout_ms = 20000,
@@ -91,31 +91,45 @@ void setup() {
     WiFi.disconnect(true);  // Desconecta o Wi-Fi
     WiFi.mode(WIFI_OFF);    // Desativa completamente o Wi-Fi
     rtcSincronizado = true;
-    
+
     now = rtc.getDateTime();
   }
 
-  rtc.disableAlarm();
-  clearRtcAlarmFlag();
+  uint8_t alarmHourReg = getRtcAlarmHour();
+  bool alarmIsEnabled = !(alarmHourReg & 0x80);
+  uint8_t alarmHourBcd = alarmHourReg & 0x7F;
+  
+  // Converte o valor da hora lido do RTC (que está em BCD) para decimal
+  uint8_t alarmHourValue = bcdToDec(alarmHourBcd);
+  
+  uint8_t nextHour = (now.hour + 1) % 24;
 
-  uint8_t alarmHour = (now.hour + 1) % 24;
-  rtc.setAlarmByHours(alarmHour);
-  rtc.enableAlarm();
+  if (!alarmIsEnabled || alarmHourValue != nextHour) {
+    Serial.println("Alarme do RTC não configurado ou incorreto. Reconfigurando...");
+    
+    rtc.disableAlarm();
+    clearRtcAlarmFlag();
+    
+    rtc.setAlarmByHours(nextHour);
+    rtc.enableAlarm();
+    
+    Serial.printf("Novo alarme programado para aproximadamente %02d:00\n", nextHour);
+  } else {
+    Serial.printf("Alarme do RTC já está configurado para aproximadamente %02d:00. Aguardando...\n", alarmHourValue);
+  }
+  
   esp_task_wdt_reset();
 
   pinMode(RTC_INT_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(RTC_INT_PIN), handleRtcInterrupt, FALLING);
 
-  Serial.printf("Alarme programado para %02d:%02d:00 (próxima hora)\n", alarmHour, now.minute);
-  Serial.println("Aguardando alarme...");
-
   pinMode(GEIGER_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(GEIGER_PIN), contarPulsoISR, FALLING);
-  
+
   pinMode(LED_HEARTBEAT, OUTPUT);
   digitalWrite(LED_HEARTBEAT, LOW);
   Serial.println("LED heartbeat configurado");
-  
+
   esp_task_wdt_reset();
 }
 
@@ -140,6 +154,24 @@ void clearRtcAlarmFlag() {
   Wire.write(REG_CS2);
   Wire.write(cs2);
   Wire.endTransmission();
+}
+
+// Função para converter de BCD (Binary-Coded Decimal) para Decimal
+uint8_t bcdToDec(uint8_t val) {
+  return ((val >> 4) * 10) + (val & 0x0F);
+}
+
+uint8_t getRtcAlarmHour() {
+  const uint8_t PCF8563_ADDR = 0x51;
+  const uint8_t REG_ALRM_HOUR = 0x0A;
+
+  Wire.beginTransmission(PCF8563_ADDR);
+  Wire.write(REG_ALRM_HOUR);
+  Wire.endTransmission(false);
+
+  Wire.requestFrom(PCF8563_ADDR, (uint8_t)1);
+  uint8_t alarmHour = Wire.read();
+  return alarmHour;
 }
 
 void IRAM_ATTR contarPulsoISR() {
@@ -212,7 +244,7 @@ void writeHeader(File dataFile) {
   dataFile.print("hora > [contagem ultima hora] =>");
   dataFile.printf("{");
   for (int i = 0; i < ARRAY_SIZE; i++) {
-    if ( i == 0 ){
+    if (i == 0) {
       dataFile.printf("H%d", i);
     } else {
       dataFile.printf(",H%d", i);
@@ -244,7 +276,7 @@ void writeDataToSD() {
 
   dataFile.printf("{");
   for (int i = 0; i < ARRAY_SIZE; i++) {
-    if (i == 0){
+    if (i == 0) {
       dataFile.printf("%d", contadorHoras[i]);
     } else {
       dataFile.printf(",%d", contadorHoras[i]);
@@ -259,17 +291,18 @@ void writeDataToSD() {
 
 void atualizarHeartbeat() {
   unsigned long tempoAtual = millis();
-  
+
   if (tempoAtual - ultimoPiscaLed >= intervaloPisca) {
     ultimoPiscaLed = tempoAtual;
     estadoLed = !estadoLed;
     digitalWrite(LED_HEARTBEAT, estadoLed);
+    Serial.println(".");
   }
 }
 
 void loop() {
   atualizarHeartbeat();
-  
+
   RTC_Date now = rtc.getDateTime();
   esp_task_wdt_reset();
 
