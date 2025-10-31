@@ -10,13 +10,14 @@ import numpy as np
 
 def extrair_todas_contagens_horarias(caminho_arquivo):
     """
+    (Esta função permanece IDÊNTICA)
     Procura a linha de log do vetor completo de 24 horas (23:00:00) e extrai 
     todos os 24 valores de contagem, ignorando logs de 'debug' e outros.
     Retorna uma lista de 24 contagens.
     """
     
     # Regex para capturar o conteúdo dentro das chaves {} APENAS na linha 23:00:00.
-    regex_padrao_23h = re.compile(r'23:00:00\s+>\s+\[\d+\]\s+=>\s+\{\s*([\d,]+)\s*\}')
+    regex_padrao_23h = re.compile(r'00:00:00\s+>\s+\[\d+\]\s+=>\s+\{\s*([\d,]+)\s*\}')
     
     try:
         with open(caminho_arquivo, 'r') as f:
@@ -33,7 +34,7 @@ def extrair_todas_contagens_horarias(caminho_arquivo):
                         print(f"AVISO: Arquivo {os.path.basename(caminho_arquivo)} tem um vetor incompleto (tamanho: {len(contagens)}).")
                         return []
         
-        print(f"AVISO: Log de 23:00:00 não encontrado no arquivo {caminho_arquivo}.")
+        print(f"AVISO: Log de 00:00:00 não encontrado no arquivo {caminho_arquivo}.")
         return []
         
     except FileNotFoundError:
@@ -45,51 +46,88 @@ def extrair_todas_contagens_horarias(caminho_arquivo):
 
 def main():
     if len(sys.argv) < 2:
-        print("Uso: python3 geiger_serie_temporal.py <nome_do_arquivo.csv>")
-        print("Exemplo: python3 geiger_serie_temporal.py dados_20250917.csv")
+        print("Uso: geiger_media_semanal.py <arquivo1.csv> <arquivo2.csv> [arquivo3.csv ...]")
+        print("Exemplo: geiger_media_semanal.py dados_20250917.csv dados_20250918.csv")
         sys.exit(1)
 
-    caminho_arquivo = sys.argv[1]
+    caminhos_arquivos = sys.argv[1:]
     
-    print(f"Processando arquivo: {caminho_arquivo}...")
+    print(f"Processando {len(caminhos_arquivos)} arquivos...")
     
-    contagens_horarias = extrair_todas_contagens_horarias(caminho_arquivo)
+    dados_semanais = []
+    datas_encontradas = []
 
-    if not contagens_horarias:
+    for caminho in caminhos_arquivos:
+        contagens_horarias = extrair_todas_contagens_horarias(caminho)
+        
+        if contagens_horarias:
+            dados_semanais.append(contagens_horarias)
+            
+            # Tenta extrair a data do nome do arquivo para o título
+            match_data = re.search(r'dados_(\d{4})(\d{2})(\d{2})\.csv', caminho)
+            if match_data:
+                try:
+                    data = datetime(int(match_data.group(1)), int(match_data.group(2)), int(match_data.group(3)))
+                    datas_encontradas.append(data)
+                except ValueError:
+                    pass # Ignora se a data no nome do arquivo for inválida
+
+    if not dados_semanais:
         print("\nNenhum dado de contagem válido foi encontrado para gerar o gráfico.")
     else:
-        df = pd.DataFrame({
+        num_dias = len(dados_semanais)
+        
+        # Cria um DataFrame onde cada linha é um dia (24 colunas)
+        df_semana = pd.DataFrame(dados_semanais, columns=range(24))
+        
+        # Calcula a média e o desvio padrão PARA CADA HORA (verticalmente, axis=0)
+        media_por_hora = df_semana.mean(axis=0)
+        
+        # O desvio padrão só é válido se tivermos mais de 1 dia
+        desvio_padrao_por_hora = None
+        if num_dias > 1:
+            desvio_padrao_por_hora = df_semana.std(axis=0)
+
+        # Média geral de todos os dias (para a linha horizontal)
+        media_geral_periodo = media_por_hora.mean()
+        
+        # Prepara dados para o gráfico
+        df_plot = pd.DataFrame({
             'Hora': list(range(24)),
-            'Contagem_Geiger': contagens_horarias
+            'Contagem_Media': media_por_hora
         })
-        
-        media_dia = df['Contagem_Geiger'].mean()
-        desvio_padrao = df['Contagem_Geiger'].std()
-        
-        limite_superior = media_dia + desvio_padrao
-        limite_inferior = media_dia - desvio_padrao
         
         plt.figure(figsize=(14, 7)) 
 
-        plt.bar(df['Hora'], df['Contagem_Geiger'], color='#20B2AA', alpha=0.8, label='Contagem de Pulsos')
+        # Plota as barras de média horária
+        # Adiciona barras de erro (yerr) se tivermos mais de 1 dia
+        if desvio_padrao_por_hora is not None:
+            plt.bar(df_plot['Hora'], df_plot['Contagem_Media'], 
+                    yerr=desvio_padrao_por_hora, capsize=5, 
+                    color='#20B2AA', alpha=0.8, 
+                    label='Contagem Média por Hora')
+        else:
+            plt.bar(df_plot['Hora'], df_plot['Contagem_Media'], 
+                    color='#20B2AA', alpha=0.8, 
+                    label='Contagem (Apenas 1 dia)')
         
-        plt.axhline(media_dia, color='red', linestyle='-', linewidth=2, label=f'Média do Dia: {media_dia:,.0f}')
+        # Plota a média geral do período
+        plt.axhline(media_geral_periodo, color='red', linestyle='-', linewidth=2, 
+                    label=f'Média do Período: {media_geral_periodo:,.0f}')
         
-        plt.axhline(limite_superior, color='orange', linestyle='--', linewidth=1.5, label=f'+1 Desvio Padrão')
-        plt.axhline(limite_inferior, color='orange', linestyle='--', linewidth=1.5, label=f'-1 Desvio Padrão')
-        
-        outliers = df[(df['Contagem_Geiger'] > limite_superior) | (df['Contagem_Geiger'] < limite_inferior)]
-        plt.scatter(outliers['Hora'], outliers['Contagem_Geiger'], color='red', s=50, zorder=5, label='Fora do Limite')
-
-        match_data = re.search(r'dados_(\d{4})(\d{2})(\d{2})\.csv', caminho_arquivo)
-        titulo = f'Contagem de Pulsos Geiger: Série Temporal Diária'
-        if match_data:
-             data_formatada = datetime(int(match_data.group(1)), int(match_data.group(2)), int(match_data.group(3))).strftime('%d/%m/%Y')
-             titulo = f'Contagem de Pulsos Geiger: Série Temporal em {data_formatada}'
+        # Título dinâmico
+        titulo = f'Contagem Média de Pulsos Geiger ({num_dias} dias)'
+        if datas_encontradas:
+            data_inicio = min(datas_encontradas).strftime('%d/%m/%Y')
+            data_fim = max(datas_encontradas).strftime('%d/%m/%Y')
+            if data_inicio == data_fim:
+                titulo = f'Contagem de Pulsos Geiger: {data_inicio}'
+            else:
+                titulo = f'Contagem Média de Pulsos Geiger ({data_inicio} a {data_fim})'
 
         plt.title(titulo, fontsize=16)
         plt.xlabel('Hora do Dia (00:00 a 23:00)', fontsize=12)
-        plt.ylabel('Contagem de Pulsos Geiger', fontsize=12)
+        plt.ylabel('Média de Pulsos Geiger', fontsize=12)
         
         plt.xticks(np.arange(0, 24, 1))
         plt.ticklabel_format(style='plain', axis='y')
