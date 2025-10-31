@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from datetime import datetime
 import numpy as np
+import glob 
 
 def extrair_todas_contagens_horarias(caminho_arquivo):
     """
@@ -46,17 +47,36 @@ def extrair_todas_contagens_horarias(caminho_arquivo):
 
 def main():
     if len(sys.argv) < 2:
-        print("Uso: geiger_media_semanal.py <arquivo1.csv> <arquivo2.csv> [arquivo3.csv ...]")
-        print("Exemplo: geiger_media_semanal.py dados_20250917.csv dados_20250918.csv")
+        # 2. Mudamos a mensagem de uso
+        print("Uso: python3 geiger_media_pasta.py <caminho_da_pasta_de_logs>")
+        print("Exemplo: python3 geiger_media_pasta.py ./logs_diarios/")
         sys.exit(1)
 
-    caminhos_arquivos = sys.argv[1:]
-    
-    print(f"Processando {len(caminhos_arquivos)} arquivos...")
+    # 3. Pegamos o caminho da pasta
+    caminho_pasta = sys.argv[1]
+
+    # 4. Verificamos se o caminho é um diretório válido
+    if not os.path.isdir(caminho_pasta):
+        print(f"ERRO: O caminho fornecido '{caminho_pasta}' não é um diretório válido.")
+        sys.exit(1)
+
+    # 5. Usamos o 'glob' para encontrar todos os arquivos que correspondem ao padrão
+    #     'os.path.join' junta o caminho da pasta + o padrão de forma segura
+    #     O padrão 'dados_*.csv' pega qualquer arquivo que comece com 'dados_' e termine com '.csv'
+    padrao_arquivos = os.path.join(caminho_pasta, 'dados_*.csv')
+    caminhos_arquivos = glob.glob(padrao_arquivos)
+
+    if not caminhos_arquivos:
+        print(f"Nenhum arquivo 'dados_*.csv' encontrado no diretório: {caminho_pasta}")
+        sys.exit(0) # Saímos sem erro
+
+    print(f"Encontrados {len(caminhos_arquivos)} arquivos. Processando...")
     
     dados_semanais = []
     datas_encontradas = []
 
+    # O restante do código é IDÊNTICO, pois 'caminhos_arquivos' agora
+    # é uma lista de nomes de arquivos, exatamente como era antes.
     for caminho in caminhos_arquivos:
         contagens_horarias = extrair_todas_contagens_horarias(caminho)
         
@@ -70,28 +90,23 @@ def main():
                     data = datetime(int(match_data.group(1)), int(match_data.group(2)), int(match_data.group(3)))
                     datas_encontradas.append(data)
                 except ValueError:
-                    pass # Ignora se a data no nome do arquivo for inválida
+                    pass 
 
     if not dados_semanais:
         print("\nNenhum dado de contagem válido foi encontrado para gerar o gráfico.")
     else:
         num_dias = len(dados_semanais)
         
-        # Cria um DataFrame onde cada linha é um dia (24 colunas)
         df_semana = pd.DataFrame(dados_semanais, columns=range(24))
         
-        # Calcula a média e o desvio padrão PARA CADA HORA (verticalmente, axis=0)
         media_por_hora = df_semana.mean(axis=0)
         
-        # O desvio padrão só é válido se tivermos mais de 1 dia
         desvio_padrao_por_hora = None
         if num_dias > 1:
             desvio_padrao_por_hora = df_semana.std(axis=0)
 
-        # Média geral de todos os dias (para a linha horizontal)
         media_geral_periodo = media_por_hora.mean()
         
-        # Prepara dados para o gráfico
         df_plot = pd.DataFrame({
             'Hora': list(range(24)),
             'Contagem_Media': media_por_hora
@@ -99,8 +114,6 @@ def main():
         
         plt.figure(figsize=(14, 7)) 
 
-        # Plota as barras de média horária
-        # Adiciona barras de erro (yerr) se tivermos mais de 1 dia
         if desvio_padrao_por_hora is not None:
             plt.bar(df_plot['Hora'], df_plot['Contagem_Media'], 
                     yerr=desvio_padrao_por_hora, capsize=5, 
@@ -111,11 +124,9 @@ def main():
                     color='#20B2AA', alpha=0.8, 
                     label='Contagem (Apenas 1 dia)')
         
-        # Plota a média geral do período
         plt.axhline(media_geral_periodo, color='red', linestyle='-', linewidth=2, 
                     label=f'Média do Período: {media_geral_periodo:,.0f}')
         
-        # Título dinâmico
         titulo = f'Contagem Média de Pulsos Geiger ({num_dias} dias)'
         if datas_encontradas:
             data_inicio = min(datas_encontradas).strftime('%d/%m/%Y')
