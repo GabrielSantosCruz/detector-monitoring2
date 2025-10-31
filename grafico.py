@@ -11,19 +11,17 @@ import glob
 
 def extrair_todas_contagens_horarias(caminho_arquivo):
     """
-    (Esta função permanece IDÊNTICA)
-    Procura a linha de log do vetor completo de 24 horas (23:00:00) e extrai 
-    todos os 24 valores de contagem, ignorando logs de 'debug' e outros.
+    Procura a linha de log do vetor completo de 24 horas (gravada à 00:00:00) 
+    e extrai todos os 24 valores de contagem.
     Retorna uma lista de 24 contagens.
     """
     
-    # Regex para capturar o conteúdo dentro das chaves {} APENAS na linha 23:00:00.
-    regex_padrao_23h = re.compile(r'00:00:00\s+>\s+\[\d+\]\s+=>\s+\{\s*([\d,]+)\s*\}')
+    regex_padrao_00h = re.compile(r'00:00:00\s+>\s+\[\d+\]\s+=>\s+\{\s*([\d,]+)\s*\}')
     
     try:
         with open(caminho_arquivo, 'r') as f:
             for linha in f:
-                match_geiger = regex_padrao_23h.search(linha)
+                match_geiger = regex_padrao_00h.search(linha)
                 
                 if match_geiger:
                     dados_str = match_geiger.group(1)
@@ -35,7 +33,7 @@ def extrair_todas_contagens_horarias(caminho_arquivo):
                         print(f"AVISO: Arquivo {os.path.basename(caminho_arquivo)} tem um vetor incompleto (tamanho: {len(contagens)}).")
                         return []
         
-        print(f"AVISO: Log de 00:00:00 não encontrado no arquivo {caminho_arquivo}.")
+        print(f"AVISO: Log de 00:00:00 (com vetor completo) não encontrado no arquivo {caminho_arquivo}.")
         return []
         
     except FileNotFoundError:
@@ -47,48 +45,43 @@ def extrair_todas_contagens_horarias(caminho_arquivo):
 
 def main():
     if len(sys.argv) < 2:
-        # 2. Mudamos a mensagem de uso
         print("Uso: python3 geiger_media_pasta.py <caminho_da_pasta_de_logs>")
         print("Exemplo: python3 geiger_media_pasta.py ./logs_diarios/")
         sys.exit(1)
 
-    # 3. Pegamos o caminho da pasta
     caminho_pasta = sys.argv[1]
 
-    # 4. Verificamos se o caminho é um diretório válido
     if not os.path.isdir(caminho_pasta):
         print(f"ERRO: O caminho fornecido '{caminho_pasta}' não é um diretório válido.")
         sys.exit(1)
 
-    # 5. Usamos o 'glob' para encontrar todos os arquivos que correspondem ao padrão
-    #     'os.path.join' junta o caminho da pasta + o padrão de forma segura
-    #     O padrão 'dados_*.csv' pega qualquer arquivo que comece com 'dados_' e termine com '.csv'
     padrao_arquivos = os.path.join(caminho_pasta, 'dados_*.csv')
     caminhos_arquivos = glob.glob(padrao_arquivos)
 
     if not caminhos_arquivos:
         print(f"Nenhum arquivo 'dados_*.csv' encontrado no diretório: {caminho_pasta}")
-        sys.exit(0) # Saímos sem erro
+        sys.exit(0)
 
     print(f"Encontrados {len(caminhos_arquivos)} arquivos. Processando...")
     
     dados_semanais = []
     datas_encontradas = []
 
-    # O restante do código é IDÊNTICO, pois 'caminhos_arquivos' agora
-    # é uma lista de nomes de arquivos, exatamente como era antes.
     for caminho in caminhos_arquivos:
         contagens_horarias = extrair_todas_contagens_horarias(caminho)
         
         if contagens_horarias:
             dados_semanais.append(contagens_horarias)
             
-            # Tenta extrair a data do nome do arquivo para o título
             match_data = re.search(r'dados_(\d{4})(\d{2})(\d{2})\.csv', caminho)
             if match_data:
                 try:
-                    data = datetime(int(match_data.group(1)), int(match_data.group(2)), int(match_data.group(3)))
-                    datas_encontradas.append(data)
+                    data_do_nome_arquivo = datetime(int(match_data.group(1)), int(match_data.group(2)), int(match_data.group(3)))
+                    
+                    data_corrigida = data_do_nome_arquivo - pd.Timedelta(days=1)
+                    
+                    datas_encontradas.append(data_corrigida)
+                    
                 except ValueError:
                     pass 
 
@@ -98,7 +91,6 @@ def main():
         num_dias = len(dados_semanais)
         
         df_semana = pd.DataFrame(dados_semanais, columns=range(24))
-        
         media_por_hora = df_semana.mean(axis=0)
         
         desvio_padrao_por_hora = None
